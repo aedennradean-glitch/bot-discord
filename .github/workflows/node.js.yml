@@ -1,0 +1,32 @@
+name: Aeden Voice Receiver Tests
+
+on:
+  push:
+    branches:
+      - feature/aeden-voice-music
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  opus-loopback:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Install dependencies
+        run: npm install --no-package-lock
+
+      - name: Install Opus decoder
+        run: npm install --no-save --no-package-lock @discordjs/opus
+
+      - name: Run Opus loopback test
+        run: node tests/voice-receiver/opus-loopback.js
