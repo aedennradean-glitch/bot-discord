@@ -2376,7 +2376,11 @@ async function onMessageCreate(message) {
     }
 
     // Reaksi spontan terhadap obrolan (tanpa mention) hanya di main-chat.
-    if (isMainChatChannel(message.channel.id)) await handleMainChatAutonomy();
+    // Pesan yang jelas ditujukan ke bot lain (mention atau menyebut namanya) tidak boleh diserobot.
+    const addressedToPeer =
+      Boolean(PEER_BOT_ID && (rawContent.includes(`<@${PEER_BOT_ID}>`) || rawContent.includes(`<@!${PEER_BOT_ID}>`))) ||
+      rawContent.toLowerCase().split(/[^\p{L}\p{N}_]+/u).includes(PEER_BOT_NAME.toLowerCase());
+    if (isMainChatChannel(message.channel.id) && !addressedToPeer) await handleMainChatAutonomy();
   } catch (error) {
     logError("DISCORD", "Message error:", error);
   }
