@@ -183,6 +183,10 @@ const files = args.filter((a) => !a.startsWith("--"));
 const target = path.resolve(files[0] || "index.js");
 const backup = `${target}.bak-peer`;
 
+if (target === path.resolve(__filename) || fs.readFileSync(target, "utf8").includes("const PEER_MODULE =")) {
+  console.error("Ini skrip pasang, BUKAN index.js bot. Jangan pernah menamai/menimpa file ini sebagai index.js.\nSimpan dengan nama aslinya, jalankan di laptop terhadap index.js bot yang asli, lalu deploy hasilnya.");
+  process.exit(1);
+}
 if (!fs.existsSync(target)) { console.error(`File tidak ditemukan: ${target}`); process.exit(1); }
 if (fs.existsSync(backup)) { console.error(`Backup sudah ada (${backup}). Patch mungkin sudah pernah dijalankan; hapus/pindahkan backup itu kalau memang mau mengulang dari file asli.`); process.exit(1); }
 
