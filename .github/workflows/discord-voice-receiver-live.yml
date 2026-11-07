@@ -1,0 +1,48 @@
+name: Discord Voice Receiver Live Test
+
+on:
+  push:
+    branches:
+      - feature/aeden-voice-music
+
+permissions:
+  contents: read
+
+jobs:
+  live-receiver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+
+      - name: Verify required GitHub Secrets exist
+        shell: bash
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          TEST_GUILD_ID: ${{ secrets.TEST_GUILD_ID }}
+          TEST_VOICE_CHANNEL_ID: ${{ secrets.TEST_VOICE_CHANNEL_ID }}
+        run: |
+          node -e 'for (const name of ["DISCORD_TOKEN", "TEST_GUILD_ID", "TEST_VOICE_CHANNEL_ID"]) { if (!process.env[name]) { console.error(`Missing required GitHub Actions secret: ${name}`); process.exitCode = 1; } }'
+
+      - name: Install project dependencies
+        run: npm install --no-package-lock
+
+      - name: Install Opus decoder for test only
+        run: npm install --no-save --no-package-lock @discordjs/opus
+
+      - name: Verify voice dependency installation
+        run: npm ls discord.js @discordjs/voice @discordjs/opus
+
+      - name: Run Discord receiver test
+        shell: bash
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          TEST_GUILD_ID: ${{ secrets.TEST_GUILD_ID }}
+          TEST_VOICE_CHANNEL_ID: ${{ secrets.TEST_VOICE_CHANNEL_ID }}
+        run: node tests/voice-receiver/discord-receiver.js
