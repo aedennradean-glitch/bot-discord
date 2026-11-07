@@ -17,6 +17,7 @@ const {
 
 const { OpusEncoder } = require("@discordjs/opus");
 
+// Environment variables
 const TOKEN = (process.env.DISCORD_TOKEN || "").trim();
 const GUILD_ID = (process.env.TEST_GUILD_ID || "").trim();
 const CHANNEL_ID = (process.env.TEST_VOICE_CHANNEL_ID || "").trim();
@@ -26,6 +27,7 @@ const TIMEOUT_MS = Number(
 );
 
 const MAX_CAPTURE_SECONDS_PER_USER = 8;
+
 const SAMPLE_RATE = 48_000;
 const CHANNELS = 2;
 const BYTES_PER_SAMPLE = 2;
@@ -37,7 +39,12 @@ const MAX_PCM_BYTES_PER_USER =
   MAX_CAPTURE_SECONDS_PER_USER;
 
 const VALID_FRAME_SAMPLES = new Set([
-  120, 240, 480, 960, 1920, 2880,
+  120,
+  240,
+  480,
+  960,
+  1920,
+  2880,
 ]);
 
 function log(level, message) {
@@ -52,9 +59,11 @@ function validSnowflake(value) {
 
 function summarizeError(error) {
   if (!error) return "unknown error";
+
   return error.stack || error.message || String(error);
 }
 
+// Validate environment
 if (
   !TOKEN ||
   !validSnowflake(GUILD_ID) ||
@@ -64,6 +73,7 @@ if (
     "FAIL",
     "Environment tidak lengkap: butuh DISCORD_TOKEN, TEST_GUILD_ID, dan TEST_VOICE_CHANNEL_ID."
   );
+
   process.exit(1);
 }
 
@@ -76,9 +86,11 @@ if (
     "FAIL",
     "RECEIVER_TEST_TIMEOUT_MS harus integer 15000-300000 ms."
   );
+
   process.exit(1);
 }
 
+// Discord client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -88,11 +100,12 @@ const client = new Client({
 
 const subscriptions = new Map();
 
-let connection;
+let connection = null;
 let done = false;
-let watchdog;
-let readyTimer;
+let watchdog = null;
+let readyTimer = null;
 
+// Finish test and clean up
 function finish(ok, message, error) {
   if (done) return;
 
@@ -147,11 +160,16 @@ function failIfActive(message, error) {
   }
 }
 
+// Subscribe to a user's audio
 function startSubscription(userId) {
   if (done || subscriptions.has(userId)) return;
 
   const receiver = connection.receiver;
-  const decoder = new OpusEncoder(SAMPLE_RATE, CHANNELS);
+
+  const decoder = new OpusEncoder(
+    SAMPLE_RATE,
+    CHANNELS
+  );
 
   const stream = receiver.subscribe(userId, {
     end: {
@@ -175,35 +193,47 @@ function startSubscription(userId) {
     `Speaking start: userId=${userId}; stream Opus dibuat.`
   );
 
+  // Receive and decode audio packets
   stream.on("data", (packet) => {
     if (done) return;
 
     try {
+      // AudioReceiveStream normally emits a Buffer directly.
+      // Keep compatibility with objects containing payload too.
+      const opusPacket = Buffer.isBuffer(packet)
+        ? packet
+        : packet?.payload;
+
       if (
-        !packet ||
-        !Buffer.isBuffer(packet.payload) ||
-        packet.payload.length === 0
+        !Buffer.isBuffer(opusPacket) ||
+        opusPacket.length === 0
       ) {
         throw new Error(
-          "Receiver memberikan packet tanpa payload Opus."
+          `Paket Opus tidak valid. Tipe data: ${typeof packet}; constructor: ${packet?.constructor?.name || "unknown"}.`
         );
       }
 
       session.opusPackets++;
 
-      const pcm = decoder.decode(packet.payload);
+      // Decode Opus to PCM
+      const pcm = decoder.decode(opusPacket);
 
-      if (!Buffer.isBuffer(pcm) || pcm.length === 0) {
+      if (
+        !Buffer.isBuffer(pcm) ||
+        pcm.length === 0
+      ) {
         throw new Error(
           "Decoder mengembalikan PCM kosong."
         );
       }
 
       const samplesPerChannel =
-        pcm.length / (CHANNELS * BYTES_PER_SAMPLE);
+        pcm.length /
+        (CHANNELS * BYTES_PER_SAMPLE);
 
       const validPcm =
-        pcm.length % (CHANNELS * BYTES_PER_SAMPLE) === 0 &&
+        pcm.length %
+          (CHANNELS * BYTES_PER_SAMPLE) === 0 &&
         VALID_FRAME_SAMPLES.has(samplesPerChannel);
 
       if (!validPcm) {
@@ -216,7 +246,9 @@ function startSubscription(userId) {
 
       session.pcmBytes += pcm.length;
 
-      if (session.pcmBytes > MAX_PCM_BYTES_PER_USER) {
+      if (
+        session.pcmBytes > MAX_PCM_BYTES_PER_USER
+      ) {
         throw new Error(
           `Batas uji terlampaui (${MAX_CAPTURE_SECONDS_PER_USER}s PCM per pengguna).`
         );
@@ -231,6 +263,7 @@ function startSubscription(userId) {
           `userId=${userId}: ${session.opusPackets} paket Opus, ${session.pcmBytes} bytes PCM tervalidasi (48 kHz, stereo, signed 16-bit LE).`
         );
       }
+
     } catch (error) {
       failIfActive(
         `Gagal menerima atau decode paket audio dari user ${userId}.`,
@@ -269,21 +302,30 @@ function startSubscription(userId) {
   });
 }
 
+// Discord client errors
 client.on("error", (error) => {
-  failIfActive("Discord client error.", error);
+  failIfActive(
+    "Discord client error.",
+    error
+  );
 });
 
 client.on("shardError", (error) => {
-  failIfActive("Discord gateway shard error.", error);
+  failIfActive(
+    "Discord gateway shard error.",
+    error
+  );
 });
 
+// Discord client ready
 client.once(Events.ClientReady, async () => {
-  // Penting: timer ready harus dihentikan setelah client siap.
+  // Stop ready timer because the client is ready.
   clearTimeout(readyTimer);
   readyTimer = null;
 
   try {
     const guild = await client.guilds.fetch(GUILD_ID);
+
     const channel = await guild.channels.fetch(CHANNEL_ID);
 
     if (!channel || !channel.isVoiceBased()) {
@@ -293,6 +335,7 @@ client.once(Events.ClientReady, async () => {
     }
 
     const member = await guild.members.fetchMe();
+
     const permissions = channel.permissionsFor(member);
 
     if (
@@ -317,6 +360,7 @@ client.once(Events.ClientReady, async () => {
       "Minta pengguna uji berbicara selama 3-5 detik lalu berhenti. Audio tidak ditulis ke file."
     );
 
+    // Join voice channel
     connection = joinVoiceChannel({
       channelId: channel.id,
       guildId: guild.id,
@@ -332,6 +376,7 @@ client.once(Events.ClientReady, async () => {
       );
     });
 
+    // Wait until voice connection is ready
     await entersState(
       connection,
       VoiceConnectionStatus.Ready,
@@ -352,6 +397,7 @@ client.once(Events.ClientReady, async () => {
       );
     }
 
+    // Listen for users speaking
     connection.receiver.speaking.on(
       "start",
       startSubscription
@@ -365,6 +411,7 @@ client.once(Events.ClientReady, async () => {
   }
 });
 
+// Overall test timeout
 watchdog = setTimeout(() => {
   const detail = subscriptions.size
     ? ` Ada subscription aktif (${subscriptions.size}), tetapi belum ada stream audio lengkap yang berhasil ditutup.`
@@ -375,12 +422,17 @@ watchdog = setTimeout(() => {
   );
 }, TIMEOUT_MS);
 
+// Client ready timeout
 readyTimer = setTimeout(() => {
   failIfActive(
     "Discord client belum ready sebelum batas 30 detik."
   );
 }, 30_000);
 
+// Login
 client.login(TOKEN).catch((error) => {
-  failIfActive("Discord login gagal.", error);
+  failIfActive(
+    "Discord login gagal.",
+    error
+  );
 });
